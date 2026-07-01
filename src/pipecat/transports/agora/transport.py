@@ -7,17 +7,19 @@
 """Agora transport implementation for Pipecat.
 
 This module provides Agora real-time communication integration
-including audio streaming, data messaging, user management, and channel
-event handling for conversational AI applications.
+including audio and video streaming, data messaging, user management,
+and channel event handling for conversational AI applications.
 """
 
 import asyncio
 import json
+import time
 import threading
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from typing import Any
 
+import numpy as np
 from loguru import logger
 from pydantic import BaseModel
 
@@ -32,10 +34,12 @@ from pipecat.frames.frames import (
     InputTransportMessageFrame,
     InterruptionFrame,
     OutputAudioRawFrame,
+    OutputImageRawFrame,
     OutputTransportMessageFrame,
     OutputTransportMessageUrgentFrame,
     StartFrame,
     UserAudioRawFrame,
+    UserImageRawFrame,
 )
 from pipecat.processors.frame_processor import FrameDirection, FrameProcessorSetup
 from pipecat.transports.base_input import BaseInputTransport
@@ -52,14 +56,17 @@ try:
         AudioSubscriptionOptions,
         ChannelProfileType,
         ClientRoleType,
+        ExternalVideoFrame,
         RTCConnConfig,
         RtcConnectionPublishConfig,
         VideoPublishType,
+        VideoSubscriptionOptions,
     )
     from agora.rtc.agora_service import AgoraService
     from agora.rtc.audio_frame_observer import IAudioFrameObserver
     from agora.rtc.local_user_observer import IRTCLocalUserObserver
     from agora.rtc.rtc_connection_observer import IRTCConnectionObserver
+    from agora.rtc.video_frame_observer import IVideoFrameObserver
 except ModuleNotFoundError as e:
     logger.error(f"Exception: {e}")
     logger.error(
@@ -67,6 +74,10 @@ except ModuleNotFoundError as e:
         'See: https://github.com/AgoraIO-Extensions/Agora-python-Server-SDK'
     )
     raise ImportError(f"Missing module: {e}") from e
+
+# Agora ExternalVideoFrame pixel format constants (from C SDK headers)
+_VIDEO_PIXEL_I420 = 1
+_VIDEO_PIXEL_RGBA = 4
 
 
 # ---------------------------------------------------------------------------
@@ -356,6 +367,62 @@ class AgoraTransportClient:
                 self._client._callbacks.on_data_received, raw, user_id
             )
 
+    class _VideoObserver(IVideoFrameObserver):
+        """Routes received video frames to the async video queue.
+
+        The Agora SDK delivers video in I420 (YUV420P) planar format.
+        We convert to RGB here using numpy for efficient BT.601 conversion,
+        then queue the RGB bytes along with the user_id and dimensions.
+        """
+
+        def __init__(self, client: "AgoraTransportClient"):
+            self._client = client
+
+        def on_frame(self, channel_id, remote_uid, frame):
+            try:
+                width = frame.width
+                height = frame.height
+
+                # Extract I420 planes, copying data before the native
+                # buffer is reclaimed.
+                y = np.frombuffer(bytes(frame.y_buffer), dtype=np.uint8).reshape(
+                    (height, frame.y_stride)
+                )[:, :width]
+                u = np.frombuffer(bytes(frame.u_buffer), dtype=np.uint8).reshape(
+                    (height // 2, frame.u_stride)
+                )[:, : width // 2]
+                v = np.frombuffer(bytes(frame.v_buffer), dtype=np.uint8).reshape(
+                    (height // 2, frame.v_stride)
+                )[:, : width // 2]
+
+                # Upsample U and V to full resolution
+                u_full = np.repeat(np.repeat(u, 2, axis=0), 2, axis=1)
+                v_full = np.repeat(np.repeat(v, 2, axis=0), 2, axis=1)
+
+                # BT.601 YUV→RGB conversion
+                y_f = y.astype(np.float32)
+                u_f = u_full.astype(np.float32) - 128.0
+                v_f = v_full.astype(np.float32) - 128.0
+
+                r = np.clip(y_f + 1.402 * v_f, 0, 255).astype(np.uint8)
+                g = np.clip(y_f - 0.344136 * u_f - 0.714136 * v_f, 0, 255).astype(
+                    np.uint8
+                )
+                b = np.clip(y_f + 1.772 * u_f, 0, 255).astype(np.uint8)
+
+                rgb = np.stack([r, g, b], axis=-1)
+                rgb_bytes = rgb.tobytes()
+
+                loop = self._client._task_manager.get_event_loop()
+                asyncio.run_coroutine_threadsafe(
+                    self._client._video_queue.put(
+                        (rgb_bytes, remote_uid, width, height)
+                    ),
+                    loop,
+                )
+            except Exception as e:
+                logger.error(f"Error converting video frame: {e}")
+
     # ------ Initialization ------
 
     def __init__(
@@ -385,6 +452,7 @@ class AgoraTransportClient:
         self._connection_lost_delivered = False
 
         self._audio_queue: asyncio.Queue = asyncio.Queue()
+        self._video_queue: asyncio.Queue = asyncio.Queue()
         self._event_queue: asyncio.Queue = asyncio.Queue()
 
         self._task_manager: BaseTaskManager | None = None
@@ -444,11 +512,13 @@ class AgoraTransportClient:
 
             logger.info(f"Connecting to Agora channel {self._channel_name}")
 
+            video_enabled = self._params.video_in_enabled or self._params.video_out_enabled
+
             config = AgoraServiceConfig(
                 appid=self._app_id,
                 enable_audio_processor=1,
                 enable_audio_device=0,
-                enable_video=0,
+                enable_video=1 if video_enabled else 0,
                 audio_scenario=AudioScenarioType(self._params.audio_scenario),
                 enable_apm=self._params.enable_apm,
                 apm_config=self._params.apm_config,
@@ -464,16 +534,20 @@ class AgoraTransportClient:
                 )
                 conn_config = RTCConnConfig(
                     auto_subscribe_audio=1 if self._params.auto_subscribe_audio else 0,
-                    auto_subscribe_video=0,
+                    auto_subscribe_video=1 if self._params.auto_subscribe_video else 0,
                     client_role_type=ClientRoleType.CLIENT_ROLE_BROADCASTER,
                     channel_profile=ChannelProfileType.CHANNEL_PROFILE_LIVE_BROADCASTING,
                     audio_subs_options=audio_sub_options,
                 )
                 publish_config = RtcConnectionPublishConfig(
                     is_publish_audio=self._params.audio_out_enabled,
-                    is_publish_video=False,
+                    is_publish_video=self._params.video_out_enabled,
                     audio_publish_type=AudioPublishType.AUDIO_PUBLISH_TYPE_PCM,
-                    video_publish_type=VideoPublishType.VIDEO_PUBLISH_TYPE_NONE,
+                    video_publish_type=(
+                        VideoPublishType.VIDEO_PUBLISH_TYPE_YUV
+                        if self._params.video_out_enabled
+                        else VideoPublishType.VIDEO_PUBLISH_TYPE_NONE
+                    ),
                     audio_scenario=AudioScenarioType(self._params.audio_scenario),
                 )
                 self._connection = self._agora_service.create_rtc_connection(
@@ -500,6 +574,14 @@ class AgoraTransportClient:
                     )
                     local_user.subscribe_all_audio()
 
+                if self._params.video_in_enabled:
+                    self._video_observer = self._VideoObserver(self)
+                    self._connection.register_video_frame_observer(
+                        self._video_observer
+                    )
+                    local_user = self._connection.get_local_user()
+                    local_user.subscribe_all_video(VideoSubscriptionOptions())
+
                 if self._params.enable_encryption and self._params.encryption_config:
                     self._connection.enable_encryption(
                         1, self._params.encryption_config
@@ -515,6 +597,9 @@ class AgoraTransportClient:
 
                 if self._params.audio_out_enabled:
                     self._connection.publish_audio()
+
+                if self._params.video_out_enabled:
+                    self._connection.publish_video()
 
             except Exception:
                 logger.error(
@@ -608,6 +693,52 @@ class AgoraTransportClient:
             logger.error(f"Error sending data: {e}")
             return False
 
+    async def write_video(
+        self, image_data: bytes, width: int, height: int, fmt: str
+    ) -> bool:
+        """Write a video frame to the Agora channel.
+
+        Accepts RGB or RGBA image data. RGB is converted to RGBA by
+        appending 0xFF alpha bytes. The ExternalVideoFrame uses
+        format=4 (VIDEO_PIXEL_RGBA).
+        """
+        if not self._connected or not self._connection:
+            return False
+        try:
+            if fmt == "RGB":
+                # Convert RGB to RGBA by adding alpha channel
+                rgb = np.frombuffer(image_data, dtype=np.uint8).reshape(
+                    (height, width, 3)
+                )
+                rgba = np.empty((height, width, 4), dtype=np.uint8)
+                rgba[:, :, :3] = rgb
+                rgba[:, :, 3] = 255
+                buffer = bytearray(rgba.tobytes())
+            elif fmt in ("RGBA", "RGBX"):
+                buffer = bytearray(image_data)
+            else:
+                logger.warning(
+                    f"Unsupported video format '{fmt}', expected RGB or RGBA"
+                )
+                return False
+
+            frame = ExternalVideoFrame(
+                type=1,  # raw pixels
+                format=_VIDEO_PIXEL_RGBA,
+                buffer=buffer,
+                stride=width,
+                height=height,
+                timestamp=int(time.time() * 1000),
+            )
+            ret = self._connection.push_video_frame(frame)
+            if ret != 0:
+                logger.warning(f"push_video_frame returned {ret}")
+                return False
+            return True
+        except Exception as e:
+            logger.error(f"Error writing video to Agora: {e}")
+            return False
+
     async def interrupt_audio(self):
         """Clear the audio buffer on interruption."""
         if self._connection:
@@ -643,6 +774,7 @@ class AgoraInputTransport(BaseInputTransport):
         self._transport = transport
         self._client = client
         self._audio_in_task: asyncio.Task | None = None
+        self._video_in_task: asyncio.Task | None = None
         self._resampler = create_stream_resampler()
         self._initialized = False
 
@@ -667,6 +799,9 @@ class AgoraInputTransport(BaseInputTransport):
         if self._params.audio_in_enabled and not self._audio_in_task:
             self._audio_in_task = self.create_task(self._audio_in_task_handler())
 
+        if self._params.video_in_enabled and not self._video_in_task:
+            self._video_in_task = self.create_task(self._video_in_task_handler())
+
         await self.set_transport_ready(frame)
 
     async def stop(self, frame: EndFrame):
@@ -674,12 +809,16 @@ class AgoraInputTransport(BaseInputTransport):
         await self._client.disconnect()
         if self._audio_in_task:
             await self.cancel_task(self._audio_in_task)
+        if self._video_in_task:
+            await self.cancel_task(self._video_in_task)
 
     async def cancel(self, frame: CancelFrame):
         await super().cancel(frame)
         await self._client.disconnect()
         if self._audio_in_task:
             await self.cancel_task(self._audio_in_task)
+        if self._video_in_task:
+            await self.cancel_task(self._video_in_task)
 
     async def push_app_message(self, message: Any, sender: str):
         """Push an application message received from Agora as a transport frame."""
@@ -712,6 +851,18 @@ class AgoraInputTransport(BaseInputTransport):
                 num_channels=channels,
             )
             await self.push_audio_frame(input_frame)
+
+    async def _video_in_task_handler(self):
+        """Consume video frames from the Agora SDK video queue."""
+        while True:
+            rgb_bytes, uid, width, height = await self._client._video_queue.get()
+            frame = UserImageRawFrame(
+                user_id=uid,
+                image=rgb_bytes,
+                size=(width, height),
+                format="RGB",
+            )
+            await self.push_video_frame(frame)
 
 
 # ---------------------------------------------------------------------------
@@ -770,6 +921,13 @@ class AgoraOutputTransport(BaseOutputTransport):
         """Write a Pipecat audio frame to the Agora channel."""
         return await self._client.write_audio(
             frame.audio, self.sample_rate, self._params.audio_out_channels
+        )
+
+    async def write_video_frame(self, frame: OutputImageRawFrame) -> bool:
+        """Write a Pipecat video frame to the Agora channel."""
+        width, height = frame.size
+        return await self._client.write_video(
+            frame.image, width, height, frame.format or "RGB"
         )
 
     async def send_message(
