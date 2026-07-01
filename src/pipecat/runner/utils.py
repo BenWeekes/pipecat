@@ -39,6 +39,7 @@ from fastapi import WebSocket
 from loguru import logger
 
 from pipecat.runner.types import (
+    AgoraRunnerArguments,
     CallData,
     DailyRunnerArguments,
     EvalRunnerArguments,
@@ -735,6 +736,18 @@ async def create_transport(
             params=params,
             host=runner_args.host,
             port=runner_args.port,
+        )
+    elif isinstance(runner_args, AgoraRunnerArguments):
+        params = _get_transport_params("agora", transport_params)
+
+        from pipecat.transports.agora.transport import AgoraTransport
+
+        return AgoraTransport(
+            app_id=runner_args.app_id,
+            channel_name=runner_args.channel_name,
+            uid=runner_args.uid,
+            token=runner_args.token,
+            params=params,
         )
     elif isinstance(runner_args, VonageRunnerArguments):
         from pipecat.transports.vonage.video_connector import (

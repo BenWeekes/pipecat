@@ -244,6 +244,24 @@ class LiveKitRunnerArguments(RunnerArguments):
 
 
 @dataclass
+class AgoraRunnerArguments(RunnerArguments):
+    """Agora transport session arguments for the runner.
+
+    Parameters:
+        app_id: Agora App ID.
+        channel_name: Agora channel name to join.
+        uid: User ID for this bot participant (numeric string in v1).
+        token: Authentication token for the channel. Always a non-empty
+            string -- may equal app_id for testing-mode projects.
+    """
+
+    app_id: str
+    channel_name: str
+    uid: str
+    token: str
+
+
+@dataclass
 class EvalRunnerArguments(RunnerArguments):
     """Eval transport session arguments for the runner.
 

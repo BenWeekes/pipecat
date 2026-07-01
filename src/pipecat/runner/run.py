@@ -111,6 +111,7 @@ from fastapi.responses import FileResponse, Response
 from loguru import logger
 
 from pipecat.runner.types import (
+    AgoraRunnerArguments,
     DailyRunnerArguments,
     EvalRunnerArguments,
     RunnerArguments,
@@ -377,6 +378,9 @@ def _print_startup_message(args: argparse.Namespace):
             scheme = "wss" if args.host != "localhost" else "ws"
             print(f"   → WebSocket:   {scheme}://{args.host}:{args.port}/ws-client")
             _print_security_status(args)
+    elif args.transport == "agora":
+        print("🚀 Bot ready! (Agora)")
+        print(f"   → Open: {_runner_url(args)}")
     elif args.transport == "vonage":
         print()
         print("🚀 Bot ready!")
@@ -547,7 +551,7 @@ def _setup_unified_start_route(
     When ``-t`` was passed on the command line, requests for any other transport
     are rejected with HTTP 400.
     """
-    ALL_TRANSPORTS = ["webrtc", "daily", *TELEPHONY_TRANSPORTS, "websocket"]
+    ALL_TRANSPORTS = ["agora", "webrtc", "daily", *TELEPHONY_TRANSPORTS, "websocket"]
 
     @app.get("/status")
     async def status():
@@ -568,6 +572,10 @@ def _setup_unified_start_route(
         dailyToken: str | None
         wsUrl: str | None
         token: str | None
+        agoraAppId: str | None
+        agoraChannel: str | None
+        agoraUid: str | None
+        agoraToken: str | None
 
     @app.post("/start")
     async def start_agent(request: Request):
@@ -699,6 +707,38 @@ def _setup_unified_start_route(
             runner_args.cli_args = args
             asyncio.create_task(bot_module.bot(runner_args))
             return result
+
+        elif transport == "agora":
+            body = request_data.get("body", {})
+            session_id = str(uuid.uuid4())
+
+            from pipecat.runner.agora import configure as configure_agora
+
+            app_id, channel_name, uid, agora_token = await configure_agora(
+                channel_name=request_data.get("channelName"),
+                uid=request_data.get("uid"),
+                token=request_data.get("token"),
+            )
+
+            bot_module = _get_bot_module()
+            runner_args = AgoraRunnerArguments(
+                app_id=app_id,
+                channel_name=channel_name,
+                uid=uid,
+                token=agora_token,
+                body=body,
+                session_id=session_id,
+            )
+            runner_args.cli_args = args
+            asyncio.create_task(bot_module.bot(runner_args))
+
+            return StartBotResult(
+                sessionId=session_id,
+                agoraAppId=app_id,
+                agoraChannel=channel_name,
+                agoraUid=uid,
+                agoraToken=agora_token,
+            )
 
         elif transport in TELEPHONY_TRANSPORTS:
             # Telephony: the bot starts when the provider connects to /ws.
@@ -1336,6 +1376,33 @@ async def _run_eval(args: argparse.Namespace):
     await bot_module.bot(runner_args)
 
 
+async def _run_agora(args: argparse.Namespace):
+    """Run Agora bot with direct connection (no FastAPI server)."""
+    from pipecat.runner.agora import configure as configure_agora
+
+    logger.info("Running with direct Agora connection...")
+
+    app_id, channel_name, uid, token = await configure_agora()
+
+    runner_args = AgoraRunnerArguments(
+        app_id=app_id,
+        channel_name=channel_name,
+        uid=uid,
+        token=token,
+        session_id=str(uuid.uuid4()),
+    )
+    runner_args.handle_sigint = True
+    runner_args.cli_args = args
+
+    bot_module = _get_bot_module()
+
+    print(f"   → Agora channel: {channel_name}")
+    print(f"   → UID: {uid}")
+    print()
+
+    await bot_module.bot(runner_args)
+
+
 async def _run_vonage():
     """Run Vonage bot (no FastAPI server)."""
     logger.info("Running Vonage transport...")
@@ -1436,7 +1503,7 @@ def main(parser: argparse.ArgumentParser | None = None):
         "-t",
         "--transport",
         type=str,
-        choices=["daily", "eval", "vonage", "webrtc", "websocket", *TELEPHONY_TRANSPORTS],
+        choices=["agora", "daily", "eval", "vonage", "webrtc", "websocket", *TELEPHONY_TRANSPORTS],
         default=None,
         help=(
             "Restrict the server to a single transport and set it as the default for /start. "
@@ -1553,6 +1620,12 @@ def main(parser: argparse.ArgumentParser | None = None):
         print(f"🚀 Bot ready! (eval transport on ws://{args.host}:{args.port})")
         print()
         asyncio.run(_run_eval(args))
+        return
+
+    # Handle Agora transport (direct connection, no FastAPI server needed)
+    if args.transport == "agora":
+        _print_startup_message(args)
+        asyncio.run(_run_agora(args))
         return
 
     # Print startup message
