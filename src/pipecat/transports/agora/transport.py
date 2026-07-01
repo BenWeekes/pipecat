@@ -775,7 +775,19 @@ class AgoraOutputTransport(BaseOutputTransport):
     async def send_message(
         self, frame: OutputTransportMessageFrame | OutputTransportMessageUrgentFrame
     ):
-        """Send a transport message via Agora data stream."""
+        """Send a transport message via Agora data stream.
+
+        Agora data streams are channel-wide broadcast; per-participant
+        targeting is not supported by the SDK. If a participant_id is
+        set on the frame it is logged and ignored.
+        """
+        if isinstance(frame, (AgoraOutputTransportMessageFrame, AgoraOutputTransportMessageUrgentFrame)):
+            if frame.participant_id:
+                logger.warning(
+                    f"Agora data streams do not support per-participant targeting. "
+                    f"Message will be broadcast to all users in the channel "
+                    f"(requested participant_id={frame.participant_id})."
+                )
         message = frame.message
         if isinstance(message, dict):
             message = json.dumps(message, ensure_ascii=False)
@@ -966,6 +978,10 @@ class AgoraTransport(BaseTransport):
             await self._output.send_message(frame)
 
     async def renew_token(self, token: str):
-        """Renew the Agora token."""
+        """Renew the Agora token.
+
+        Persists the new token so reconnections use the updated value.
+        """
+        self._client._token = token
         if self._client._connection:
             self._client._connection.renew_token(token)
