@@ -438,7 +438,7 @@ class ProjectGenerator:
 
         # Categorize transports for the run instructions
         telephony_transports = {"twilio", "telnyx", "plivo", "exotel"}
-        webrtc_transports = {"smallwebrtc", "daily"}
+        webrtc_transports = {"agora", "smallwebrtc", "daily"}
         has_telephony = any(t in telephony_transports for t in self.config.transports)
         has_webrtc = any(t in webrtc_transports for t in self.config.transports)
 

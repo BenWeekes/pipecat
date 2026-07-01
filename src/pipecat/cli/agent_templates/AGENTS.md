@@ -73,7 +73,7 @@ Every bot exposes an async `bot(runner_args)` entry point that the dev runner di
 Transport and services are scaffold inputs (the `--transport` / `--stt` / `--llm` / `--tts` flags) — map the use case to them before you scaffold, and confirm exact class names and params via §3.
 
 **Transport — by where the bot runs:**
-- **Web / mobile voice** — `DailyTransport` or `SmallWebRTCTransport`.
+- **Web / mobile voice** — `AgoraTransport`, `DailyTransport`, or `SmallWebRTCTransport`.
 - **Telephony** — a WebSocket transport (`FastAPIWebsocketTransport`) + the provider's serializer (Twilio, Telnyx, …), or `DailyTransport` for Daily PSTN/SIP.
 
 **Scaffold every transport you need at once** — repeat `--transport` (e.g. `--transport twilio --transport smallwebrtc`); the scaffold wires each one's params and dependencies. They coexist in `transport_params`; `-t <name>` picks one per run. `--bot-type` is inferred from your transports (telephony if any telephony transport, else web), so you can omit it. A **telephony** bot can include a WebRTC transport for local testing. A convenient dev setup is your production transport *plus*:

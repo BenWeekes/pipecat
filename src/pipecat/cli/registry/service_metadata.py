@@ -139,6 +139,12 @@ class ServiceRegistry:
     # Web/Mobile Transports (WebRTC)
     WEBRTC_TRANSPORTS: list[ServiceDefinition] = [
         ServiceDefinition(
+            value="agora",
+            label="Agora (WebRTC)",
+            package="pipecat-ai[agora]",
+            class_name=["AgoraParams"],
+        ),
+        ServiceDefinition(
             value="daily",
             label="Daily (WebRTC)",
             package="pipecat-ai[daily]",

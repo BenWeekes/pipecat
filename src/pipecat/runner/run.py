@@ -379,8 +379,7 @@ def _print_startup_message(args: argparse.Namespace):
             print(f"   → WebSocket:   {scheme}://{args.host}:{args.port}/ws-client")
             _print_security_status(args)
     elif args.transport == "agora":
-        print("🚀 Bot ready! (Agora)")
-        print(f"   → Open: {_runner_url(args)}")
+        print("🚀 Bot ready! (Agora — direct connect, no HTTP server)")
     elif args.transport == "vonage":
         print()
         print("🚀 Bot ready!")

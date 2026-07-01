@@ -9,14 +9,6 @@
 This example shows how to build a voice agent using the Agora transport
 with Deepgram STT, OpenAI LLM, and ElevenLabs TTS.
 
-Usage (runner mode -- recommended):
-
-    python transports-agora.py -t agora
-
-Usage (direct mode):
-
-    python transports-agora.py
-
 Required environment variables:
 
     AGORA_APP_ID       - Agora App ID from the Agora Console
@@ -26,9 +18,10 @@ Required environment variables:
 
 Optional environment variables:
 
-    AGORA_CHANNEL_NAME - Channel name (default: "pipecat")
-    AGORA_UID          - User ID (default: "0")
-    AGORA_TOKEN        - Pre-minted token (default: app_id for testing-mode)
+    AGORA_APP_CERTIFICATE - Agora App Certificate (enables token minting)
+    AGORA_TOKEN           - Pre-minted token (default: app_id for testing-mode)
+    AGORA_CHANNEL_NAME    - Channel name (default: auto-generated)
+    AGORA_UID             - User ID (default: "0")
 """
 
 import asyncio
@@ -47,7 +40,7 @@ from pipecat.processors.aggregators.llm_response_universal import (
     LLMContextAggregatorPair,
     LLMUserAggregatorParams,
 )
-from pipecat.runner.types import AgoraRunnerArguments, RunnerArguments
+from pipecat.runner.agora import configure
 from pipecat.services.deepgram.stt import DeepgramSTTService
 from pipecat.services.elevenlabs.tts import ElevenLabsTTSService
 from pipecat.services.openai.llm import OpenAILLMService
@@ -60,39 +53,21 @@ logger.remove(0)
 logger.add(sys.stderr, level="DEBUG")
 
 
-async def bot(runner_args: RunnerArguments):
-    """Bot entry point -- works with both runner and direct invocation."""
+async def main():
+    (app_id, channel_name, uid, token) = await configure()
 
-    # When launched via the runner, runner_args is AgoraRunnerArguments with
-    # pre-configured credentials. For direct invocation we build the
-    # transport from environment variables.
-    if isinstance(runner_args, AgoraRunnerArguments):
-        transport = AgoraTransport(
-            app_id=runner_args.app_id,
-            channel_name=runner_args.channel_name,
-            uid=runner_args.uid,
-            token=runner_args.token,
-            params=AgoraParams(
-                audio_in_enabled=True,
-                audio_out_enabled=True,
-                audio_in_sample_rate=16000,
-                audio_out_sample_rate=24000,
-            ),
-        )
-    else:
-        app_id = os.environ["AGORA_APP_ID"]
-        transport = AgoraTransport(
-            app_id=app_id,
-            channel_name=os.getenv("AGORA_CHANNEL_NAME", "pipecat"),
-            uid=os.getenv("AGORA_UID", "0"),
-            token=os.getenv("AGORA_TOKEN", app_id),
-            params=AgoraParams(
-                audio_in_enabled=True,
-                audio_out_enabled=True,
-                audio_in_sample_rate=16000,
-                audio_out_sample_rate=24000,
-            ),
-        )
+    transport = AgoraTransport(
+        app_id=app_id,
+        channel_name=channel_name,
+        uid=uid,
+        token=token,
+        params=AgoraParams(
+            audio_in_enabled=True,
+            audio_out_enabled=True,
+            audio_in_sample_rate=16000,
+            audio_out_sample_rate=24000,
+        ),
+    )
 
     stt = DeepgramSTTService(api_key=os.environ["DEEPGRAM_API_KEY"])
 
@@ -154,25 +129,10 @@ async def bot(runner_args: RunnerArguments):
     async def on_user_left(transport, user_id, reason):
         await worker.queue_frame(EndFrame())
 
-    runner = WorkerRunner(handle_sigint=runner_args.handle_sigint)
+    runner = WorkerRunner()
     await runner.add_workers(worker)
     await runner.run()
 
 
 if __name__ == "__main__":
-    # Support both runner mode (python bot.py -t agora) and direct mode
-    if len(sys.argv) > 1 and ("-t" in sys.argv or "--transport" in sys.argv):
-        from pipecat.runner.run import main
-
-        main()
-    else:
-        # Direct mode: run without the development runner
-        app_id = os.environ["AGORA_APP_ID"]
-        args = AgoraRunnerArguments(
-            app_id=app_id,
-            channel_name=os.getenv("AGORA_CHANNEL_NAME", "pipecat"),
-            uid=os.getenv("AGORA_UID", "0"),
-            token=os.getenv("AGORA_TOKEN", app_id),
-        )
-        args.handle_sigint = True
-        asyncio.run(bot(args))
+    asyncio.run(main())
