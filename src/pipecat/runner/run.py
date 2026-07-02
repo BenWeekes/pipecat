@@ -583,8 +583,9 @@ def _setup_unified_start_route(
         Accepts::
 
             {
-                "transport": "webrtc",        // "webrtc" | "daily" | "twilio" | "telnyx" |
-                                              // "plivo" | "exotel" — default: "webrtc"
+                "transport": "webrtc",        // "agora" | "webrtc" | "daily" | "twilio" |
+                                              // "telnyx" | "plivo" | "exotel"
+                                              // — default: "webrtc"
 
                 // WebRTC-specific
                 "enableDefaultIceServers": false,
@@ -594,6 +595,12 @@ def _setup_unified_start_route(
                 "createDailyRoom": true,
                 "dailyRoomProperties": {...},
                 "dailyMeetingTokenProperties": {...},
+                "body": {...},
+
+                // Agora-specific
+                "channelName": "my-channel",
+                "uid": "0",
+                "token": "pre-minted-token",
                 "body": {...}
             }
         """

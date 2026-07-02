@@ -13,10 +13,12 @@ Tests cover:
 - YUV→RGB and RGB→RGBA conversion correctness
 """
 
+import argparse
 import asyncio
 import os
+import sys
+import types
 import unittest
-from dataclasses import fields as dataclass_fields
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import numpy as np
@@ -421,6 +423,94 @@ class TestCreateTransportAgora(unittest.IsolatedAsyncioTestCase):
         }
         transport = await create_transport(args, transport_params)
         self.assertIsInstance(transport, AgoraTransport)
+
+
+try:
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+
+    from pipecat.runner.run import _setup_unified_start_route
+
+    FASTAPI_AVAILABLE = True
+except ImportError:
+    FASTAPI_AVAILABLE = False
+
+
+@unittest.skipUnless(FASTAPI_AVAILABLE, "fastapi not installed")
+class TestStartEndpointAgora(unittest.TestCase):
+    """POST /start with transport=agora returns Agora credential fields."""
+
+    def test_start_agora_returns_credentials(self):
+        app = FastAPI()
+        args = argparse.Namespace(transport=None)
+        _setup_unified_start_route(app, args, {})
+
+        # Mock configure to return deterministic values
+        mock_configure = AsyncMock(
+            return_value=("app-id-123", "test-channel", "42", "token-abc")
+        )
+
+        # Mock bot module so the spawned task doesn't fail
+        bot_module = types.ModuleType("bot")
+        bot_module.bot = AsyncMock()
+
+        with (
+            patch("pipecat.runner.run._transport_routes_enabled", return_value=True),
+            patch(
+                "pipecat.runner.agora.configure",
+                mock_configure,
+            ),
+            patch("pipecat.runner.run._get_bot_module", return_value=bot_module),
+        ):
+            response = TestClient(app).post(
+                "/start",
+                json={
+                    "transport": "agora",
+                    "channelName": "test-channel",
+                    "uid": "42",
+                    "token": "token-abc",
+                },
+            )
+
+        self.assertEqual(response.status_code, 200)
+        body = response.json()
+        self.assertIn("sessionId", body)
+        self.assertEqual(body["agoraAppId"], "app-id-123")
+        self.assertEqual(body["agoraChannel"], "test-channel")
+        self.assertEqual(body["agoraUid"], "42")
+        self.assertEqual(body["agoraToken"], "token-abc")
+
+    def test_start_agora_passes_request_fields_to_configure(self):
+        app = FastAPI()
+        args = argparse.Namespace(transport=None)
+        _setup_unified_start_route(app, args, {})
+
+        mock_configure = AsyncMock(
+            return_value=("app", "ch", "0", "tok")
+        )
+        bot_module = types.ModuleType("bot")
+        bot_module.bot = AsyncMock()
+
+        with (
+            patch("pipecat.runner.run._transport_routes_enabled", return_value=True),
+            patch("pipecat.runner.agora.configure", mock_configure),
+            patch("pipecat.runner.run._get_bot_module", return_value=bot_module),
+        ):
+            TestClient(app).post(
+                "/start",
+                json={
+                    "transport": "agora",
+                    "channelName": "my-channel",
+                    "uid": "99",
+                    "token": "my-token",
+                },
+            )
+
+        mock_configure.assert_called_once_with(
+            channel_name="my-channel",
+            uid="99",
+            token="my-token",
+        )
 
 
 if __name__ == "__main__":
