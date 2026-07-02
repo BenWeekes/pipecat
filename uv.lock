@@ -27,6 +27,18 @@ wheels = [
 ]
 
 [[package]]
+name = "agora-python-server-sdk"
+version = "2.4.8"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/7e/a4/d7752eea8e95f6b65b456477222faa463c0d1862dcddfef7dc3fc404f30d/agora_python_server_sdk-2.4.8.tar.gz", hash = "sha256:8e0629e30c57b908ca7d6110ccf39f77602c0923f3e3f96bacf5f85bdc1856bf", size = 94269, upload-time = "2026-07-01T12:03:56.232Z" }
+
+[[package]]
+name = "agora-token-builder"
+version = "1.0.0"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/b9/55/6741101e6169f7c44388f1184b845db956ccfaac23356f49077418042885/agora_token_builder-1.0.0.tar.gz", hash = "sha256:6a22a35baf748dc80ca054ba7e293ba16c22dc7eae85396ffb41e80f13f9c2f1", size = 4813, upload-time = "2021-12-29T02:53:13.415Z" }
+
+[[package]]
 name = "aic-sdk"
 version = "2.5.0"
 source = { registry = "https://pypi.org/simple" }
@@ -4402,6 +4414,10 @@ dependencies = [
 ]
 
 [package.optional-dependencies]
+agora = [
+    { name = "agora-python-server-sdk" },
+    { name = "agora-token-builder" },
+]
 aic = [
     { name = "aic-sdk" },
 ]
@@ -4614,6 +4630,8 @@ docs = [
 [package.metadata]
 requires-dist = [
     { name = "accelerate", marker = "extra == 'moondream'", specifier = "~=1.10.0" },
+    { name = "agora-python-server-sdk", marker = "extra == 'agora'", specifier = ">=2.4.7,<3" },
+    { name = "agora-token-builder", marker = "extra == 'agora'", specifier = ">=1.0.0,<2" },
     { name = "aic-sdk", marker = "extra == 'aic'", specifier = "~=2.5.0" },
     { name = "aiobotocore", marker = "extra == 'aws'", specifier = ">=3,<4" },
     { name = "aiofiles", specifier = ">=24.1.0,<27" },
@@ -4715,7 +4733,7 @@ requires-dist = [
     { name = "wait-for2", marker = "python_full_version < '3.12'", specifier = ">=0.4.1,<1" },
     { name = "websockets", specifier = ">=13.1" },
 ]
-provides-extras = ["aic", "anthropic", "assemblyai", "asyncai", "aws", "aws-nova-sonic", "azure", "cartesia", "camb", "cerebras", "daily", "deepgram", "deepseek", "elevenlabs", "evals", "fal", "fireworks", "fish", "gladia", "google", "gradium", "grok", "groq", "gstreamer", "heygen", "hume", "inception", "inworld", "koala", "kokoro", "langchain", "lemonslice", "livekit", "lmnt", "local", "local-smart-turn", "mcp", "mem0", "mistral", "mlx-whisper", "moondream", "moonshine", "nebius", "neuphonic", "novita", "nvidia", "openai", "rnnoise", "openrouter", "perplexity", "pgmq", "piper", "qwen", "redis", "resembleai", "rime", "runner", "sagemaker", "sambanova", "sarvam", "sentry", "silero", "simli", "smallest", "soniox", "soundfile", "speechmatics", "strands", "tavus", "together", "tracing", "ultravox", "vonage-video-connector", "webrtc", "websocket", "whisper", "xai", "cli"]
+provides-extras = ["agora", "aic", "anthropic", "assemblyai", "asyncai", "aws", "aws-nova-sonic", "azure", "cartesia", "camb", "cerebras", "daily", "deepgram", "deepseek", "elevenlabs", "evals", "fal", "fireworks", "fish", "gladia", "google", "gradium", "grok", "groq", "gstreamer", "heygen", "hume", "inception", "inworld", "koala", "kokoro", "langchain", "lemonslice", "livekit", "lmnt", "local", "local-smart-turn", "mcp", "mem0", "mistral", "mlx-whisper", "moondream", "moonshine", "nebius", "neuphonic", "novita", "nvidia", "openai", "rnnoise", "openrouter", "perplexity", "pgmq", "piper", "qwen", "redis", "resembleai", "rime", "runner", "sagemaker", "sambanova", "sarvam", "sentry", "silero", "simli", "smallest", "soniox", "soundfile", "speechmatics", "strands", "tavus", "together", "tracing", "ultravox", "vonage-video-connector", "webrtc", "websocket", "whisper", "xai", "cli"]
 
 [package.metadata.requires-dev]
 dev = [

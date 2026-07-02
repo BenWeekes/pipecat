@@ -39,6 +39,8 @@ Example::
 
 import os
 import secrets
+import time
+import urllib.parse
 
 from loguru import logger
 
@@ -94,14 +96,14 @@ async def configure(
         app_certificate = os.getenv("AGORA_APP_CERTIFICATE")
         if app_certificate:
             try:
-                from agora_token_builder import Role_Publisher, RtcTokenBuilder
+                from agora_token_builder import RtcTokenBuilder
             except ImportError:
                 raise ImportError(
                     "AGORA_APP_CERTIFICATE is set but agora-token-builder is not installed. "
                     "Install it with: pip install agora-token-builder"
                 )
-            token = RtcTokenBuilder.build_token_with_uid(
-                app_id, app_certificate, channel_name, int(uid), Role_Publisher, token_ttl
+            token = RtcTokenBuilder.buildTokenWithUid(
+                app_id, app_certificate, channel_name, int(uid), 1, int(time.time()) + token_ttl
             )
             logger.info(f"Generated Agora token for channel {channel_name}")
         else:
@@ -115,3 +117,56 @@ async def configure(
             )
 
     return (app_id, channel_name, uid, token)
+
+
+def mint_token(
+    app_id: str,
+    app_certificate: str,
+    channel_name: str,
+    uid: int,
+    ttl: int = 3600,
+) -> str:
+    """Mint an Agora RTC token.
+
+    Args:
+        app_id: Agora App ID.
+        app_certificate: Agora App Certificate.
+        channel_name: Channel name the token grants access to.
+        uid: Numeric user ID.
+        ttl: Token validity in seconds (default 3600).
+
+    Returns:
+        The token string.
+
+    Raises:
+        ImportError: If agora-token-builder is not installed.
+    """
+    from agora_token_builder import RtcTokenBuilder
+
+    return RtcTokenBuilder.buildTokenWithUid(
+        app_id, app_certificate, channel_name, uid, 1, int(time.time()) + ttl
+    )
+
+
+def build_viewer_url(
+    app_id: str,
+    channel_name: str,
+    token: str,
+    viewer_uid: int,
+) -> str:
+    """Build an Agora web demo URL for testing.
+
+    Args:
+        app_id: Agora App ID.
+        channel_name: Channel name.
+        token: Pre-minted token for the viewer.
+        viewer_uid: Numeric UID encoded in the token.
+
+    Returns:
+        URL string for the Agora web demo basic voice call page.
+    """
+    encoded_token = urllib.parse.quote(token, safe="")
+    return (
+        f"https://webdemo.agora.io/basicVoiceCall/index.html"
+        f"?appid={app_id}&channel={channel_name}&token={encoded_token}&uid={viewer_uid}"
+    )

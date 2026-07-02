@@ -1384,7 +1384,9 @@ async def _run_eval(args: argparse.Namespace):
 
 async def _run_agora(args: argparse.Namespace):
     """Run Agora bot with direct connection (no FastAPI server)."""
-    from pipecat.runner.agora import configure as configure_agora
+    import webbrowser
+
+    from pipecat.runner.agora import build_viewer_url, configure as configure_agora, mint_token
 
     logger.info("Running with direct Agora connection...")
 
@@ -1404,6 +1406,15 @@ async def _run_agora(args: argparse.Namespace):
 
     print(f"   → Agora channel: {channel_name}")
     print(f"   → UID: {uid}")
+
+    app_certificate = os.getenv("AGORA_APP_CERTIFICATE")
+    if app_certificate:
+        viewer_uid = 12345
+        viewer_token = mint_token(app_id, app_certificate, channel_name, viewer_uid)
+        viewer_url = build_viewer_url(app_id, channel_name, viewer_token, viewer_uid)
+        print(f"   → Viewer URL: {viewer_url}")
+        webbrowser.open(viewer_url)
+
     print()
 
     await bot_module.bot(runner_args)

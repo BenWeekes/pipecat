@@ -52,7 +52,7 @@ from pipecat.processors.aggregators.llm_response_universal import (
     LLMContextAggregatorPair,
     LLMUserAggregatorParams,
 )
-from pipecat.runner.agora import configure
+from pipecat.runner.agora import build_viewer_url, configure, mint_token
 from pipecat.services.deepgram.stt import DeepgramSTTService
 from pipecat.services.elevenlabs.tts import ElevenLabsTTSService
 from pipecat.services.openai.llm import OpenAILLMService
@@ -67,6 +67,16 @@ logger.add(sys.stderr, level="DEBUG")
 
 async def main():
     (app_id, channel_name, uid, token) = await configure()
+
+    app_certificate = os.getenv("AGORA_APP_CERTIFICATE")
+    if app_certificate:
+        import webbrowser
+
+        viewer_uid = 12345
+        viewer_token = mint_token(app_id, app_certificate, channel_name, viewer_uid)
+        viewer_url = build_viewer_url(app_id, channel_name, viewer_token, viewer_uid)
+        print(f"   → Viewer URL: {viewer_url}")
+        webbrowser.open(viewer_url)
 
     transport = AgoraTransport(
         app_id=app_id,
