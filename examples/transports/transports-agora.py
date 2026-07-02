@@ -15,11 +15,16 @@ Install::
 
 Usage::
 
+    set -a && source .env && set +a
     python transports-agora.py
 
-Note: ``-t agora`` connects directly to the Agora channel — there is
-no HTTP server or browser-served runner flow.  A separate Agora client
-(web or mobile) must join the same channel to interact with the bot.
+This connects directly to an Agora channel (no HTTP server). When
+``AGORA_APP_CERTIFICATE`` is set, the script auto-mints tokens, prints
+a browser URL for the Agora web demo, and opens it so you can speak to
+the bot immediately.
+
+Without a certificate, a separate Agora client (web or mobile) must
+join the same channel to interact with the bot.
 
 Required environment variables:
 
@@ -30,10 +35,13 @@ Required environment variables:
 
 Optional environment variables:
 
-    AGORA_APP_CERTIFICATE - Agora App Certificate (enables token minting)
+    AGORA_APP_CERTIFICATE - Agora App Certificate (enables auto token
+                            minting and browser viewer URL)
     AGORA_TOKEN           - Pre-minted token (default: app_id for testing-mode)
     AGORA_CHANNEL_NAME    - Channel name (default: auto-generated)
     AGORA_UID             - User ID (default: "0")
+
+See ``src/pipecat/transports/agora/README.md`` for the full quickstart.
 """
 
 import asyncio
@@ -52,7 +60,7 @@ from pipecat.processors.aggregators.llm_response_universal import (
     LLMContextAggregatorPair,
     LLMUserAggregatorParams,
 )
-from pipecat.runner.agora import build_viewer_url, configure, mint_token
+from pipecat.runner.agora import _viewer_uid, build_viewer_url, configure, mint_token
 from pipecat.services.deepgram.stt import DeepgramSTTService
 from pipecat.services.elevenlabs.tts import ElevenLabsTTSService
 from pipecat.services.openai.llm import OpenAILLMService
@@ -72,9 +80,9 @@ async def main():
     if app_certificate:
         import webbrowser
 
-        viewer_uid = 12345
-        viewer_token = mint_token(app_id, app_certificate, channel_name, viewer_uid)
-        viewer_url = build_viewer_url(app_id, channel_name, viewer_token, viewer_uid)
+        vuid = _viewer_uid(uid)
+        viewer_token = mint_token(app_id, app_certificate, channel_name, vuid)
+        viewer_url = build_viewer_url(app_id, channel_name, viewer_token, vuid)
         print(f"   → Viewer URL: {viewer_url}")
         webbrowser.open(viewer_url)
 

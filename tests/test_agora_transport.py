@@ -414,10 +414,92 @@ class TestAgoraConfigure(unittest.IsolatedAsyncioTestCase):
                 with self.assertRaises(ImportError):
                     await self._configure()
 
+    async def test_certificate_mints_token_with_correct_args(self):
+        """When AGORA_APP_CERTIFICATE is set and builder is available, configure()
+        calls buildTokenWithUid with role 1 and an absolute expiry timestamp."""
+        mock_builder = MagicMock()
+        mock_builder.buildTokenWithUid = MagicMock(return_value="minted-token-abc")
+
+        fake_module = types.ModuleType("agora_token_builder")
+        fake_module.RtcTokenBuilder = mock_builder
+
+        with patch.dict(
+            os.environ,
+            {"AGORA_APP_ID": "app-id", "AGORA_APP_CERTIFICATE": "cert-secret"},
+            clear=True,
+        ):
+            os.environ.pop("AGORA_TOKEN", None)
+            with patch.dict("sys.modules", {"agora_token_builder": fake_module}):
+                _, _, _, token = await self._configure(
+                    channel_name="ch", uid="42", token_ttl=600
+                )
+
+        self.assertEqual(token, "minted-token-abc")
+        mock_builder.buildTokenWithUid.assert_called_once()
+        args = mock_builder.buildTokenWithUid.call_args[0]
+        self.assertEqual(args[0], "app-id")       # app_id
+        self.assertEqual(args[1], "cert-secret")   # app_certificate
+        self.assertEqual(args[2], "ch")            # channel_name
+        self.assertEqual(args[3], 42)              # uid as int
+        self.assertEqual(args[4], 1)               # role (publisher)
+        # expiry should be an absolute timestamp (current time + ttl)
+        import time
+        self.assertGreater(args[5], int(time.time()))
+        self.assertLessEqual(args[5], int(time.time()) + 600 + 2)
+
     async def _configure(self, **kwargs):
         from pipecat.runner.agora import configure
 
         return await configure(**kwargs)
+
+
+class TestMintToken(unittest.TestCase):
+    """runner/agora.py mint_token() function."""
+
+    def test_calls_builder_with_correct_args(self):
+        mock_builder = MagicMock()
+        mock_builder.buildTokenWithUid = MagicMock(return_value="tok-123")
+
+        fake_module = types.ModuleType("agora_token_builder")
+        fake_module.RtcTokenBuilder = mock_builder
+
+        with patch.dict("sys.modules", {"agora_token_builder": fake_module}):
+            from pipecat.runner.agora import mint_token
+
+            result = mint_token("app", "cert", "channel", 99, ttl=300)
+
+        self.assertEqual(result, "tok-123")
+        args = mock_builder.buildTokenWithUid.call_args[0]
+        self.assertEqual(args[0], "app")
+        self.assertEqual(args[1], "cert")
+        self.assertEqual(args[2], "channel")
+        self.assertEqual(args[3], 99)
+        self.assertEqual(args[4], 1)
+        import time
+        self.assertGreater(args[5], int(time.time()))
+        self.assertLessEqual(args[5], int(time.time()) + 300 + 2)
+
+
+class TestBuildViewerUrl(unittest.TestCase):
+    """runner/agora.py build_viewer_url() function."""
+
+    def test_returns_correct_url(self):
+        from pipecat.runner.agora import build_viewer_url
+
+        url = build_viewer_url("app-id", "my-channel", "tok123", 555)
+        self.assertIn("appid=app-id", url)
+        self.assertIn("channel=my-channel", url)
+        self.assertIn("token=tok123", url)
+        self.assertIn("uid=555", url)
+        self.assertTrue(url.startswith("https://webdemo.agora.io/"))
+
+    def test_url_encodes_token(self):
+        from pipecat.runner.agora import build_viewer_url
+
+        url = build_viewer_url("app", "ch", "a+b/c=d", 1)
+        # Token chars +/= should be percent-encoded
+        self.assertNotIn("token=a+b", url)
+        self.assertIn("token=a%2Bb%2Fc%3Dd", url)
 
 
 @unittest.skipUnless(AGORA_AVAILABLE, "agora-python-server-sdk not installed")

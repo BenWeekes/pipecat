@@ -119,6 +119,21 @@ async def configure(
     return (app_id, channel_name, uid, token)
 
 
+def _viewer_uid(bot_uid: str) -> int:
+    """Derive a viewer UID that won't collide with the bot UID.
+
+    When the bot UID is 0 (Agora assigns one at connect time), we generate
+    a random UID. Otherwise we pick bot_uid + 1, wrapping within Agora's
+    32-bit unsigned range.
+    """
+    bot = int(bot_uid)
+    if bot == 0:
+        import random
+
+        return random.randint(10000, 2**31 - 1)
+    return (bot + 1) % (2**32)
+
+
 def mint_token(
     app_id: str,
     app_certificate: str,
