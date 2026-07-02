@@ -175,7 +175,7 @@ async def on_participant_left(transport, user_id, reason):
 | `on_connection_lost` | — | Connection lost |
 | `on_error` | `error_code, error_msg` | Error occurred |
 
-Aliases `on_user_joined`, `on_user_left`, and `on_first_user_joined` are also available for consistency with Daily/LiveKit transports.
+Agora-native aliases `on_user_joined`, `on_user_left`, and `on_first_user_joined` are also available. The `on_participant_*` names are the Pipecat standard used by Daily, LiveKit, and other transports.
 
 ## File layout
 

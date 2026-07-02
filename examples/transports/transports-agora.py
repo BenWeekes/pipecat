@@ -60,7 +60,7 @@ from pipecat.processors.aggregators.llm_response_universal import (
     LLMContextAggregatorPair,
     LLMUserAggregatorParams,
 )
-from pipecat.runner.agora import _viewer_uid, build_viewer_url, configure, mint_token
+from pipecat.runner.agora import viewer_uid, build_viewer_url, configure, mint_token
 from pipecat.services.deepgram.stt import DeepgramSTTService
 from pipecat.services.elevenlabs.tts import ElevenLabsTTSService
 from pipecat.services.openai.llm import OpenAILLMService
@@ -80,7 +80,7 @@ async def main():
     if app_certificate:
         import webbrowser
 
-        vuid = _viewer_uid(uid)
+        vuid = viewer_uid(uid)
         viewer_token = mint_token(app_id, app_certificate, channel_name, vuid)
         viewer_url = build_viewer_url(app_id, channel_name, viewer_token, vuid)
         print(f"   → Viewer URL: {viewer_url}")

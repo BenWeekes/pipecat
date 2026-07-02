@@ -119,7 +119,7 @@ async def configure(
     return (app_id, channel_name, uid, token)
 
 
-def _viewer_uid(bot_uid: str) -> int:
+def viewer_uid(bot_uid: str) -> int:
     """Derive a viewer UID that won't collide with the bot UID.
 
     When the bot UID is 0 (Agora assigns one at connect time), we generate
