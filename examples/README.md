@@ -27,7 +27,7 @@ This directory contains examples showing how to build voice and multimodal agent
 
 ## Running examples with other transports
 
-Most examples support running with other transports, like Twilio or Daily.
+Most examples support running with other transports, like Agora, Twilio, or Daily.
 
 ### Daily
 
@@ -111,7 +111,7 @@ LLM thinking/reasoning modes and MCP (Model Context Protocol) tool server integr
 
 ### [`transports/`](./transports/)
 
-Transport layer examples (WebRTC, Daily, LiveKit).
+Transport layer examples (WebRTC, Agora, Daily, LiveKit).
 
 ### [`video-avatar/`](./video-avatar/)
 

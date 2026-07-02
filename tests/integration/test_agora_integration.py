@@ -28,6 +28,8 @@ import os
 import unittest
 from unittest.mock import AsyncMock
 
+from loguru import logger
+
 import numpy as np
 
 AGORA_APP_ID = os.getenv("AGORA_APP_ID")
@@ -121,22 +123,26 @@ if AGORA_AVAILABLE:
             self.user_joined_uid: str | None = None
 
         def on_connected(self, conn, conn_info, reason):
+            logger.info(f"Viewer on_connected: reason={reason}")
             self.connected = True
 
         def on_disconnected(self, conn, conn_info, reason):
+            logger.info(f"Viewer on_disconnected: reason={reason}")
             self.connected = False
 
         def on_user_joined(self, conn, user_id):
+            logger.info(f"Viewer on_user_joined: uid={user_id}")
             self.user_joined_uid = user_id
 
         def on_user_left(self, conn, user_id, reason):
-            pass
+            logger.info(f"Viewer on_user_left: uid={user_id} reason={reason}")
 
         def on_connection_lost(self, conn, conn_info):
+            logger.warning("Viewer on_connection_lost")
             self.connected = False
 
         def on_error(self, conn, error_code, error_msg):
-            pass
+            logger.error(f"Viewer on_error: code={error_code} msg={error_msg}")
 
         def on_token_privilege_will_expire(self, conn, token):
             pass
@@ -227,6 +233,7 @@ if AGORA_AVAILABLE:
             local_user.subscribe_all_audio()
 
             ret = self._connection.connect(self._token, self._channel, self._uid)
+            logger.info(f"Viewer SDK connect() returned {ret} for channel={self._channel} uid={self._uid}")
             if ret != 0:
                 raise RuntimeError(f"Viewer connect failed: {ret}")
 
