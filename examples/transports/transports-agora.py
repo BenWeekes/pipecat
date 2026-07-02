@@ -9,6 +9,18 @@
 This example shows how to build a voice agent using the Agora transport
 with Deepgram STT, OpenAI LLM, and ElevenLabs TTS.
 
+Install::
+
+    pip install "pipecat-ai[agora]"
+
+Usage::
+
+    python transports-agora.py
+
+Note: ``-t agora`` connects directly to the Agora channel — there is
+no HTTP server or browser-served runner flow.  A separate Agora client
+(web or mobile) must join the same channel to interact with the bot.
+
 Required environment variables:
 
     AGORA_APP_ID       - Agora App ID from the Agora Console
@@ -118,15 +130,15 @@ async def main():
         idle_timeout_secs=None,
     )
 
-    @transport.event_handler("on_first_user_joined")
-    async def on_first_user_joined(transport, user_id):
+    @transport.event_handler("on_first_participant_joined")
+    async def on_first_participant_joined(transport, user_id):
         await asyncio.sleep(1)
         await worker.queue_frame(
             TTSSpeakFrame("Hello! I'm your Agora-powered voice assistant. How can I help you?")
         )
 
-    @transport.event_handler("on_user_left")
-    async def on_user_left(transport, user_id, reason):
+    @transport.event_handler("on_participant_left")
+    async def on_participant_left(transport, user_id, reason):
         await worker.queue_frame(EndFrame())
 
     runner = WorkerRunner()

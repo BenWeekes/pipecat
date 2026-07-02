@@ -149,6 +149,22 @@ class TestAgoraTransportFacade(unittest.TestCase):
         self.assertIs(transport.input(), transport.input())
         self.assertIs(transport.output(), transport.output())
 
+    def test_participant_aliases_registered(self):
+        """on_participant_joined/left/first should be available as event handlers."""
+        transport = AgoraTransport(
+            app_id="test",
+            channel_name="ch",
+            uid="0",
+            token="tok",
+        )
+        # These should not raise — the handler names are registered.
+        for name in (
+            "on_participant_joined",
+            "on_participant_left",
+            "on_first_participant_joined",
+        ):
+            transport.event_handler(name)(AsyncMock())
+
 
 @unittest.skipUnless(AGORA_AVAILABLE, "agora-python-server-sdk not installed")
 class TestFirstUserJoinedTracking(unittest.IsolatedAsyncioTestCase):

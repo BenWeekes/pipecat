@@ -466,6 +466,8 @@ class AgoraTransportClient:
 
     def _queue_event(self, callback, *args):
         """Thread-safe: called from Agora native callback threads."""
+        if not self._task_manager:
+            return
         loop = self._task_manager.get_event_loop()
         asyncio.run_coroutine_threadsafe(
             self._event_queue.put((callback, *args)), loop
@@ -687,7 +689,20 @@ class AgoraTransportClient:
         if not self._connected or not self._connection:
             return False
         try:
-            ret = self._connection.send_stream_message(bytearray(data))
+            # Work around a bug in the Agora SDK's send_stream_message()
+            # which casts the buffer to POINTER(c_char_p) instead of
+            # c_char_p.  We call the underlying ctypes function directly.
+            import ctypes
+
+            from agora.rtc.rtc_connection import agora_rtc_conn_send_stream_message
+
+            c_data = ctypes.c_char_p(bytes(data))
+            ret = agora_rtc_conn_send_stream_message(
+                self._connection.conn_handle,
+                self._connection._data_stream_id,
+                c_data,
+                len(data),
+            )
             return ret == 0
         except Exception as e:
             logger.error(f"Error sending data: {e}")
@@ -967,29 +982,38 @@ class AgoraTransport(BaseTransport):
     - on_connected: Called when the bot connects to the channel.
     - on_disconnected: Called when the bot disconnects from the channel.
     - on_before_disconnect: [sync] Called just before disconnecting.
-    - on_user_joined: Called when a remote user joins. Args: (user_id: str)
-    - on_user_left: Called when a remote user leaves.
+    - on_participant_joined: Called when a remote user joins.
+      Args: (user_id: str)
+    - on_participant_left: Called when a remote user leaves.
       Args: (user_id: str, reason: int)
     - on_audio_track_subscribed: Called when a remote audio track is subscribed.
       Args: (user_id: str)
     - on_video_track_subscribed: Called when a remote video track is subscribed.
       Args: (user_id: str)
-    - on_data_received: Called when data is received. Args: (data: bytes, user_id: str)
-    - on_first_user_joined: Called when the first remote user joins.
+    - on_data_received: Called when data is received.
+      Args: (data: bytes, user_id: str)
+    - on_first_participant_joined: Called when the first remote user joins.
       Args: (user_id: str)
     - on_token_privilege_will_expire: Called when the token is about to expire.
       Args: (token: str)
     - on_connection_lost: Called when the connection is lost.
-    - on_error: Called when an error occurs. Args: (error_code: int, error_msg: str)
+    - on_error: Called when an error occurs.
+      Args: (error_code: int, error_msg: str)
+
+    Aliases ``on_user_joined``, ``on_user_left``, and
+    ``on_first_user_joined`` are also available and map to the same
+    callbacks as their ``on_participant_*`` counterparts.  The
+    ``participant`` names match the convention used by Daily, LiveKit,
+    and other Pipecat transports.
 
     Example::
 
-        @transport.event_handler("on_first_user_joined")
-        async def on_first_user_joined(transport, user_id):
+        @transport.event_handler("on_first_participant_joined")
+        async def on_first_participant_joined(transport, user_id):
             await worker.queue_frame(TTSSpeakFrame("Hello!"))
 
-        @transport.event_handler("on_user_left")
-        async def on_user_left(transport, user_id, reason):
+        @transport.event_handler("on_participant_left")
+        async def on_participant_left(transport, user_id, reason):
             await worker.queue_frame(EndFrame())
     """
 
@@ -1058,6 +1082,11 @@ class AgoraTransport(BaseTransport):
         self._register_event_handler("on_error")
         self._register_event_handler("on_before_disconnect", sync=True)
 
+        # Participant aliases (match Daily/LiveKit naming convention)
+        self._register_event_handler("on_participant_joined")
+        self._register_event_handler("on_participant_left")
+        self._register_event_handler("on_first_participant_joined")
+
     def input(self) -> AgoraInputTransport:
         """Get the input transport for receiving media and events."""
         if not self._input:
@@ -1089,11 +1118,13 @@ class AgoraTransport(BaseTransport):
 
     async def _on_user_joined(self, user_id: str):
         await self._call_event_handler("on_user_joined", user_id)
+        await self._call_event_handler("on_participant_joined", user_id)
         if self._input:
             await self._input.push_frame(ClientConnectedFrame())
 
     async def _on_user_left(self, user_id: str, reason: int):
         await self._call_event_handler("on_user_left", user_id, reason)
+        await self._call_event_handler("on_participant_left", user_id, reason)
 
     async def _on_audio_track_subscribed(self, user_id: str):
         await self._call_event_handler("on_audio_track_subscribed", user_id)
@@ -1117,6 +1148,7 @@ class AgoraTransport(BaseTransport):
 
     async def _on_first_user_joined(self, user_id: str):
         await self._call_event_handler("on_first_user_joined", user_id)
+        await self._call_event_handler("on_first_participant_joined", user_id)
 
     async def _on_token_privilege_will_expire(self, token: str):
         await self._call_event_handler("on_token_privilege_will_expire", token)

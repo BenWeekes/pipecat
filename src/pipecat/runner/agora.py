@@ -26,6 +26,10 @@ Token resolution order (deterministic -- always produces a string token):
 3. If no token and no certificate: token = app_id (Agora SDK convention
    for projects with App Certificate disabled).
 
+Install::
+
+    pip install "pipecat-ai[agora]"
+
 Example::
 
     from pipecat.runner.agora import configure
